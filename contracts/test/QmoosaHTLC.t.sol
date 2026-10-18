@@ -4,10 +4,12 @@ pragma solidity 0.8.24;
 import "forge-std/Test.sol";
 import "../src/QmoosaHTLC.sol";
 import "../src/MockERC20.sol";
+import "../src/MockFeeToken.sol";
 
 contract QmoosaHTLCTest is Test {
     QmoosaHTLC public htlc;
     MockERC20 public token;
+    MockFeeToken public feeToken;
 
     address public alice = address(0x1111);
     address public bob = address(0x2222);
@@ -22,15 +24,21 @@ contract QmoosaHTLCTest is Test {
     uint256 public nonce = 1;
 
     function setUp() public {
+        vm.chainId(sourceChainId);
         htlc = new QmoosaHTLC();
         token = new MockERC20("USD Coin", "USDC", 18);
+        feeToken = new MockFeeToken();
 
         hashlock = sha256(secret);
         timelock = block.timestamp + 3600; // 1 hour timelock
 
         token.mint(alice, 10_000 * 1e18);
-        vm.prank(alice);
+        feeToken.mint(alice, 10_000 * 1e18);
+
+        vm.startPrank(alice);
         token.approve(address(htlc), type(uint256).max);
+        feeToken.approve(address(htlc), type(uint256).max);
+        vm.stopPrank();
     }
 
     function test_CreateSwapSuccess() public {
@@ -54,6 +62,36 @@ contract QmoosaHTLCTest is Test {
         assertEq(s.timelock, timelock);
         assertEq(uint256(s.state), uint256(QmoosaHTLC.SwapState.FUNDED));
         assertEq(token.balanceOf(address(htlc)), AMOUNT);
+    }
+
+    function test_CreateSwapRevertsOnChainIdMismatch() public {
+        vm.prank(alice);
+        vm.expectRevert(QmoosaHTLC.ChainIdMismatch.selector);
+        htlc.createSwap(
+            bob,
+            address(token),
+            AMOUNT,
+            hashlock,
+            timelock,
+            999, // Mismatched chain ID
+            destChainId,
+            nonce
+        );
+    }
+
+    function test_CreateSwapRevertsOnFeeOnTransferToken() public {
+        vm.prank(alice);
+        vm.expectRevert(QmoosaHTLC.FeeOnTransferNotSupported.selector);
+        htlc.createSwap(
+            bob,
+            address(feeToken),
+            AMOUNT,
+            hashlock,
+            timelock,
+            sourceChainId,
+            destChainId,
+            nonce
+        );
     }
 
     function test_ClaimSwapWithValidSecret() public {
@@ -245,6 +283,7 @@ contract QmoosaHTLCTest is Test {
         vm.assume(amount > 1000);
         vm.assume(duration >= 350 && duration <= 100000);
 
+        vm.chainId(1);
         uint256 fTimelock = block.timestamp + duration;
         bytes32 fSecret = keccak256(abi.encode(amount, duration));
         bytes32 fHashlock = sha256(abi.encodePacked(fSecret));

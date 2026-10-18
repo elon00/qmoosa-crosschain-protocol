@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { SwapParams, TimelockSafetyReport } from "./types.js";
+import { SwapParams, TimelockSafetyReport, ChainPairFinalityConfig } from "./types.js";
 
 /**
  * Computes SHA-256 hashlock from a secret string or buffer.
@@ -36,6 +36,17 @@ export function computeSwapId(params: SwapParams): string {
   ].join(":");
 
   return "0x" + crypto.createHash("sha256").update(Buffer.from(payload, "utf8")).digest("hex");
+}
+
+/**
+ * Calculates dynamic chain-specific refund safety margin accounting for finality depth,
+ * block times, reorg assumptions, and cross-chain relay latency.
+ */
+export function calculateDynamicSafetyMargin(config: ChainPairFinalityConfig): number {
+  const sourceFinalityTime = config.sourceBlockTimeSec * config.sourceConfirmations;
+  const destFinalityTime = config.destBlockTimeSec * config.destConfirmations;
+  // Dynamic buffer covers claim on dest + secret extraction + relayer broadcast on source + network jitter
+  return Math.max(300, (sourceFinalityTime + destFinalityTime) * 2 + config.networkLatencyBufferSec);
 }
 
 /**

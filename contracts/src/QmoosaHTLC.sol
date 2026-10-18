@@ -14,6 +14,7 @@ interface IERC20 {
  * @title QmoosaHTLC
  * @notice Cross-Chain Hashed Time-Locked Contract (HTLC) supporting atomic swaps
  *         with SHA-256 secret commitments, explicit dual-chain binding, reentrancy guards,
+ *         strict chain identity enforcement, fee-on-transfer token rejection,
  *         and mutual exclusion between claims and refunds.
  */
 contract QmoosaHTLC {
@@ -81,6 +82,8 @@ contract QmoosaHTLC {
     error SwapExpired();
     error InvalidSecretPreimage();
     error TokenTransferFailed();
+    error ChainIdMismatch();
+    error FeeOnTransferNotSupported();
 
     modifier nonReentrant() {
         if (_reentrancyStatus == _ENTERED) revert ReentrancyGuardReentrantCall();
@@ -129,6 +132,7 @@ contract QmoosaHTLC {
         uint256 destChainId,
         uint256 nonce
     ) external nonReentrant returns (bytes32 swapId) {
+        if (sourceChainId != block.chainid) revert ChainIdMismatch();
         if (recipient == address(0) || token == address(0)) revert InvalidZeroAddress();
         if (recipient == msg.sender) revert IdenticalSenderRecipient();
         if (amount == 0) revert ZeroAmount();
@@ -164,7 +168,11 @@ contract QmoosaHTLC {
         totalSwapsCount++;
         activeSwapsCount++;
 
+        // Strict fee-on-transfer / rebasing check
+        uint256 balanceBefore = IERC20(token).balanceOf(address(this));
         _safeTransferFrom(token, msg.sender, address(this), amount);
+        uint256 balanceAfter = IERC20(token).balanceOf(address(this));
+        if (balanceAfter - balanceBefore != amount) revert FeeOnTransferNotSupported();
 
         emit SwapCreated(
             swapId,

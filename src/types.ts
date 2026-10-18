@@ -34,3 +34,13 @@ export interface TimelockSafetyReport {
   safetyMarginSeconds: number;
   reason?: string;
 }
+
+export interface ChainPairFinalityConfig {
+  sourceChainId: number;
+  destChainId: number;
+  sourceBlockTimeSec: number;
+  destBlockTimeSec: number;
+  sourceConfirmations: number;
+  destConfirmations: number;
+  networkLatencyBufferSec: number;
+}
