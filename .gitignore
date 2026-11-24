@@ -3,3 +3,6 @@ dist/
 out/
 contracts/out/
 .DS_Store
+
+# Lean 4 build artifacts
+lean_verify/.lake/
